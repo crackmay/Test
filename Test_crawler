@@ -1,0 +1,33 @@
+import org.http4s.HttpRoutes
+import org.http4s.dsl.io._
+import org.http4s.implicits._
+import org.http4s.server.blaze.BlazeServerBuilder
+import org.http4s.client.blaze.BlazeClientBuilder
+import scala.concurrent.ExecutionContext.global
+import cats.effect.{IO, IOApp}
+import org.jsoup.Jsoup
+
+object WebCrawler extends IOApp.Simple {
+
+  def getTitle(url: String): IO[String] = IO {
+    val doc = Jsoup.connect(url).get()
+    doc.select("title").first().text()
+  }
+
+  val service = HttpRoutes.of[IO] {
+    case req @ POST -> Root / "fetch-titles" =>
+      for {
+        urls <- req.as[List[String]]
+        titles <- urls.traverse(getTitle)
+        response <- Ok(titles.zip(urls).toMap)
+      } yield response
+  }.orNotFound
+
+  val run: IO[Unit] =
+    BlazeServerBuilder[IO](global)
+      .bindHttp(8080, "localhost")
+      .withHttpApp(service)
+      .serve
+      .compile
+      .drain
+}
